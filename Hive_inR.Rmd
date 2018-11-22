@@ -1,0 +1,314 @@
+---
+title: "Make a hive plot for integrative analyses"
+output: fig_caption: yes
+pdf_document:
+    f
+  html_notebook: default
+  html_document: default
+  word_document: default
+---
+
+
+
+```{r}
+library(HiveR)
+
+```
+#Load the network data for pathwas and metabolites
+
+```{r}
+Gene_stats<-read.delim("/Users/AALI0054/Documents/Data/GSM/HivePlot/Palmitate_network/GLS_Palm_vs_control_rep_pathway.txt")
+met_stats<-read.delim("/Users/AALI0054/Documents/Data/GSM/HivePlot/Palmitate_network/GSS_Palm_vs_control_rep_met.txt")
+path_stats<-  read.delim("/Users/AALI0054/Documents/Data/GSM/HivePlot/Palmitate_network/GSS_Palm_vs_control_rep_pathway.txt")
+met_gene<-read.delim("/Users/AALI0054/Documents/Data/GSM/HivePlot/Palmitate_network/GSC_Palm_vs_control_rep_met.txt", header = FALSE)
+path_gene<-read.delim("/Users/AALI0054/Documents/Data/GSM/HivePlot/Palmitate_network/GSC_Palm_vs_control_rep_pathway.txt", header = FALSE)
+```
+
+```{r}
+met_gene_z<- met_gene[which(met_gene$V1 %in% met_stats$Name),]
+path_gene_z<-path_gene[which(as.character(path_gene$V1) %in% as.character(path_stats$Name)),]
+Gene_stats$ID1<-c(1:(dim(Gene_stats)[1]))
+Gene_stats$padj<-p.adjust(Gene_stats$p, method = "fdr")
+met_gene$ID2<-as.integer(as.numeric(met_gene$V1))
+path_gene$ID3<-as.integer(as.numeric(path_gene$V1))
+gene_met_tmp<-merge(met_gene, Gene_stats, by.x = "V2", by.y ="g" )
+gene_met_tmp$ID11<-as.integer(as.numeric(gene_met_tmp$V2))
+gene_met_tmp$ID11<-gene_met_tmp$ID11+max(gene_met_tmp$ID2)
+gene_met_tmp<-merge(gene_met_tmp, path_gene, by.x = "V2", by.y = "V2" )
+gene_met_tmp$ID31<- gene_met_tmp$ID3+max(gene_met_tmp$ID11)
+```
+
+```{r}
+#Create a node table
+x<-unique(c(gene_met_tmp$ID2, gene_met_tmp$ID11,gene_met_tmp$ID31)) #nodes
+x1<-as.character((c(as.character(unique(gene_met_tmp$V1.x)), as.character(unique(gene_met_tmp$V2)),as.character(unique(gene_met_tmp$V1.y))))) #labels
+x2<-rep(1:3, c(length(unique(gene_met_tmp$V1.x)), length(unique(gene_met_tmp$V2)),length(unique(gene_met_tmp$V1.y)))) # assign axis
+
+x3<- -log10( c(Gene_stats[which(x1 %in%Gene_stats$g),"p"], met_stats[which(x1 %in% met_stats$Name),"p..non.dir.."],path_stats[which(path_stats$Name %in% x1), "p..non.dir.."] ) )   #radius i.e., postion on the axis is arranged by meanigful graphical parameter e.g., significance
+
+x4<-  scale(abs(c(gene_stats[which(x1 %in% rownames(gene_stats)),"myFC"], met_stats[which(x1 %in% met_stats$Name ), "Genes..tot." ],path_stats[which(path_stats$Name %in% x1), "Genes..tot." ] )), center = FALSE, scale = TRUE) #size of the node e.g., Degree of the node or fold change etc
+
+x5<-  as.character(rep(c("#E41A1C" ,"#984EA3", "#4DAF4A"), c(length(unique(gene_met_tmp$V1.x)), length(unique(gene_met_tmp$V2)),length(unique(gene_met_tmp$V1.y)))))   #Node color
+  
+xx<-c(gene_stats[which(rownames(gene_stats) %in%x1),"myPval"], met_stats[which(met_stats$Name %in% x1), "p..non.dir.."],path_stats[which(path_stats$Name %in% x1), "p..non.dir.."] )
+  test_1$nodes$id<-x
+HivePlotData<-list()
+
+```
+
+```{r}
+# Create and edge table
+y<-  gene_met_tmp$ID2[1:500]#ID1
+y1<- gene_met_tmp$ID11[1:500, 50000:55000]#ID2
+y2<- rep(1, length(y)) # weight
+y3<- as.character(rep ("#E41A1C" , length(y)))#color
+
+edges<- data.frame(y, y1, y2, y3)
+colnames(edges)<- c("id1", "id2", "weight", "color")
+
+```
+
+```{r}
+nodes<-data.frame(x,x1,x2,x3,x4,x5)
+colnames(nodes)<-c("id", "lab", "axis","radius", "size", "color")
+type<- c("2D")
+desc<-c("many nodes")
+axis.cols<- c("#E41A1C" ,"#377EB8", "#4DAF4A")
+Data_hive<- list(nodes, edges, type, desc, axis.cols)
+names(Data_hive)<-c("nodes", "edges", "type", "desc", "axis.cols")
+Data_hive$nodes$lab<-as.character(Data_hive$nodes$lab)
+Data_hive$nodes$color<-as.character(Data_hive$nodes$color)
+Data_hive$edges$color<-as.character(Data_hive$edges$color)
+
+class(Data_hive)<-"HivePlotData"
+
+```
+#Plot with only significant metabolites
+
+Select the nodes with metabolite and pathways that are signifcant. 
+
+
+```{r}
+met_stats_sig<-(met_stats[met_stats$p.adj..non.dir..<0.05,])
+path_stats_sig<-path_stats[path_stats$p.adj..non.dir..<0.001,]
+
+sig_mets<-met_stats_sig$Name %>%as.character()
+sig_paths<-path_stats_sig$Name%>% as.character()
+
+
+gene_met_tmp_sig<-gene_met_tmp[which( as.character(gene_met_tmp$V1.x)%in% sig_mets|  as.character(gene_met_tmp$V1.y)%in% sig_paths),]
+
+gene_met_tmp_sig <-gene_met_tmp_sig[gene_met_tmp_sig$padj<0.0001,]
+
+#Create a node table
+x_sig<-unique(c(gene_met_tmp_sig$ID2, gene_met_tmp_sig$ID11,gene_met_tmp_sig$ID31)) #nodes
+x1_sig<-as.character((c(as.character(unique(gene_met_tmp_sig$V1.x)), as.character(unique(gene_met_tmp_sig$V2)),as.character(unique(gene_met_tmp_sig$V1.y))))) #labels
+x2_sig<-rep(1:3, c(length(unique(gene_met_tmp_sig$V1.x)), length(unique(gene_met_tmp_sig$V2)),length(unique(gene_met_tmp_sig$V1.y)))) # assign axis
+
+x3_sig<-  c(-log10(Gene_stats[which(x1_sig %in% Gene_stats$g),"padj"]), -log10(met_stats[which(x1_sig %in% met_stats$Name),"p..non.dir.."])*20,-log10(path_stats[which(path_stats$Name %in% x1_sig), "p..non.dir.."])*10 )   #radius i.e., postion on the axis is arranged by meanigful graphical parameter e.g., significance
+
+x4_sig<-  scale(abs(c(gene_stats[which(x1_sig %in% rownames(gene_stats)),"myFC"], met_stats_sig[which(x1_sig %in% met_stats$Name ), "Genes..tot." ],path_stats[which(path_stats$Name %in% x1_sig), "Genes..tot." ] )), center = FALSE, scale = TRUE) #size of the node e.g., Degree of the node or fold change etc
+x4_sig_a<-rep(1, length(x3_sig))
+
+x5_sig<-  as.character(rep(c("#E41A1C" ,"#984EA3", "#4DAF4A"), c(length(unique(gene_met_tmp_sig$V1.x)), length(unique(gene_met_tmp_sig$V2)),length(unique(gene_met_tmp_sig$V1.y)))))   #Node color
+  
+#xx<-c(gene_stats[which(rownames(gene_stats) %in%x1),"myPval"], met_stats[which(met_stats$Name %in% x1), "p..non.dir.."],path_stats[which(path_stats$Name %in% x1), "p..non.dir.."] )
+  
+
+```
+
+```{r}
+# Create and edge table
+y_sig<-  c(gene_met_tmp_sig$ID2, gene_met_tmp_sig$ID11,gene_met_tmp_sig$ID2 )#ID1
+y1_sig<- c(gene_met_tmp_sig$ID11, gene_met_tmp_sig$ID31,gene_met_tmp_sig$ID31)#ID2
+y2_sig<- rep(2, length(y_sig)) # weight
+y3_sig<- as.character(rep ("#E41A1C" , length(y_sig)))#color
+
+
+
+```
+
+
+```{r}
+HivePlotData<-list()
+nodes_sig<-data.frame(x_sig,x1_sig,x2_sig,x3_sig,x4_sig_a,x5_sig)
+colnames(nodes_sig)<-c("id", "lab", "axis","radius", "size", "color")
+edges_sig<- data.frame(y_sig, y1_sig, y2_sig, y3_sig)
+colnames(edges_sig)<- c("id1", "id2", "weight", "color")
+type<- c("2D")
+desc<-c("many nodes")
+axis.cols<- c("#E41A1C" ,"#377EB8", "#4DAF4A")
+
+Data_hive_sig<- list(nodes_sig, edges_sig, type, desc, axis.cols)
+
+names(Data_hive_sig)<-c("nodes", "edges", "type", "desc", "axis.cols")
+Data_hive_sig$nodes$lab<-as.character(Data_hive_sig$nodes$lab)
+Data_hive_sig$nodes$color<-as.character(Data_hive_sig$nodes$color)
+Data_hive_sig$edges$color<-as.character(Data_hive_sig$edges$color)
+
+
+
+
+
+class(Data_hive_sig)<-"HivePlotData"
+
+
+```
+
+```{r}
+plotHive(Data_hive_sig, bkgnd = "white")
+```
+```{r}
+# Add node labels and graphic decorations
+# The working directory has to include
+# not only the grInfo and anNodes files but also the jpgs.
+# So, we are going to move to such a directory and return you home afterwards.
+
+currDir <- getwd()
+setwd(system.file("extdata", "Misc", package = "HiveR"))
+plotHive(Data_hive_sig, ch = 0.1, bkgnd = "white",
+	axLabs = c("Metabolites", "Genes", "Pathways"),
+	axLab.pos = c(1, 1),
+	axLab.gpar = gpar(fontsize = 14),
+	anNodes = "Data_hive_signodes.txt",
+	anNode.gpar = gpar(col = "black"),
+	grInfo = "Data_hive_siggraphics.txt")
+setwd(currDir)
+
+```
+
+### Creat a hive plot for gene metabolites interactions only
+```{r}
+gene_met_sig<-merge(met_gene, Gene_stats, by.x = "V2", by.y ="g" )
+gene_met_sig$ID11<-as.integer(as.numeric(gene_met_sig$V2))
+gene_met_sig$ID11<-gene_met_sig$ID11+max(gene_met_sig$ID2)
+
+met_stats_sig<-(met_stats[met_stats$p.adj..non.dir..<0.05,])
+#path_stats_sig<-path_stats[path_stats$p.adj..non.dir..<0.001,]
+
+sig_mets<-met_stats_sig$Name %>%as.character()
+#sig_paths<-path_stats_sig$Name%>% as.character()
+
+
+gene_met_sig<-gene_met_sig[which( as.character(gene_met_sig$V1)%in% sig_mets),]
+
+gene_met_sig <-gene_met_sig[gene_met_sig$padj<0.05,]
+
+#Create a node table
+x_sig_met<-unique(c(gene_met_sig$ID2, gene_met_sig$ID11)) #nodes
+x1_sig_met<-as.character((c(as.character(unique(gene_met_sig$V1)), as.character(unique(gene_met_sig$V2))))) #labels
+x2_sig_met<-rep(1:2, c(length(unique(gene_met_sig$V1)), length(unique(gene_met_sig$V2)))) # assign axis
+
+x3_sig_met<-  c(-log10(Gene_stats[which(x1_sig_met %in% Gene_stats$g),"padj"]), -log10(met_stats[which(x1_sig_met %in% met_stats$Name),"p..non.dir.."]) )   #radius i.e., postion on the axis is arranged by meanigful graphical parameter e.g., significance
+
+#x4_sig<-  scale(abs(c(gene_stats[which(x1_sig_met %in% rownames(gene_stats)),"myFC"], met_stats_sig[which(x1_sig_met %in% met_stats$Name ), "Genes..tot." ])), center = FALSE, scale = TRUE) #size of the node e.g., Degree of the node or fold change etc
+x4_sig_met<-rep(1, length(x3_sig_met))
+
+x5_sig_met<-  as.character(rep(c("darkgreen" ,"darkred"), c(length(unique(gene_met_sig$V1)), length(unique(gene_met_sig$V2)))))   #Node color
+  
+#xx<-c(gene_stats[which(rownames(gene_stats) %in%x1),"myPval"], met_stats[which(met_stats$Name %in% x1), "p..non.dir.."],path_stats[which(path_stats$Name %in% x1), "p..non.dir.."] )
+  
+
+```
+
+```{r}
+# Create and edge table
+y_sig_met<-  gene_met_sig$ID2 #ID1
+y1_sig_met<- gene_met_sig$ID11 #ID2
+y2_sig_met<- rep(1, length(y_sig_met)) # weight
+y3_sig_met<- as.character(rep ("red" , length(y_sig_met)))#color
+
+
+
+```
+
+```{r}
+HivePlotData<-list()
+nodes_sig_met<-data.frame(x_sig_met,x1_sig_met,x2_sig_met,x3_sig_met,x4_sig_met,x5_sig_met)
+colnames(nodes_sig_met)<-c("id", "lab", "axis","radius", "size", "color")
+edges_sig_met<- data.frame(y_sig_met, y1_sig_met, y2_sig_met, y3_sig_met)
+colnames(edges_sig_met)<- c("id1", "id2", "weight", "color")
+type<- c("2D")
+desc<-c("gene metabolites hive plot")
+axis.cols<- c("pink" ,"pink")
+
+Data_hive_sig_met<- list(nodes_sig_met, edges_sig_met, type, desc, axis.cols)
+
+names(Data_hive_sig_met)<-c("nodes", "edges", "type", "desc", "axis.cols")
+Data_hive_sig_met$nodes$lab<-as.character(Data_hive_sig_met$nodes$lab)
+Data_hive_sig_met$nodes$color<-as.character(Data_hive_sig_met$nodes$color)
+Data_hive_sig_met$edges$color<-as.character(Data_hive_sig_met$edges$color)
+
+class(Data_hive_sig_met)<-"HivePlotData"
+plotHive(Data_hive_sig_met, ch=5, bkgnd = "white", axLabs = c("Metabolites", "Genes"),axLab.pos = c(8, 6),axLab.gpar = gpar(fontsize = 14), anCoord = "global")
+
+
+```
+
+### Creat a hive plot for gene pathways interactions only
+```{r}
+gene_path_sig<-merge(path_gene, Gene_stats, by.x = "V2", by.y ="g" )
+gene_path_sig$ID11<-as.integer(as.numeric(gene_path_sig$V2))
+gene_path_sig$ID11<-gene_path_sig$ID11+max(gene_path_sig$ID3)
+
+#path_stats_sig<-(path_stats[path_stats$p.adj..non.dir..<0.05,])
+path_stats_sig<-path_stats[path_stats$p.adj..non.dir..<0.01,]
+
+sig_paths<-path_stats_sig$Name %>%as.character()
+#sig_paths<-path_stats_sig$Name%>% as.character()
+
+
+gene_path_sig<-gene_path_sig[which( as.character(gene_path_sig$V1)%in% sig_paths),]
+
+gene_path_sig <-gene_path_sig[gene_path_sig$padj<0.05,]
+
+#Create a node table
+x_sig_path<-unique(c(gene_path_sig$ID3, gene_path_sig$ID11)) #nodes
+x1_sig_path<-as.character((c(as.character(unique(gene_path_sig$V1)), as.character(unique(gene_path_sig$V2))))) #labels
+x2_sig_path<-rep(1:2, c(length(unique(gene_path_sig$V1)), length(unique(gene_path_sig$V2)))) # assign axis
+
+x3_sig_path<-  c(-log10(Gene_stats[which(x1_sig_path %in% Gene_stats$g),"padj"]), -log10(path_stats[which(x1_sig_path %in% path_stats$Name),"p..non.dir.."]) )   #radius i.e., postion on the axis is arranged by meanigful graphical parapather e.g., significance
+
+#x4_sig<-  scale(abs(c(gene_stats[which(x1_sig_path %in% rownames(gene_stats)),"myFC"], path_stats_sig[which(x1_sig_path %in% path_stats$Name ), "Genes..tot." ])), center = FALSE, scale = TRUE) #size of the node e.g., Degree of the node or fold change etc
+x4_sig_path<-rep(1, length(x3_sig_path))
+
+x5_sig_path<-  as.character(rep(c("darkgreen" ,"darkred"), c(length(unique(gene_path_sig$V1)), length(unique(gene_path_sig$V2)))))   #Node color
+  
+#xx<-c(gene_stats[which(rownames(gene_stats) %in%x1),"myPval"], path_stats[which(path_stats$Name %in% x1), "p..non.dir.."],path_stats[which(path_stats$Name %in% x1), "p..non.dir.."] )
+  
+
+```
+
+```{r}
+# Create and edge table
+y_sig_path<-  gene_path_sig$ID3 #ID1
+y1_sig_path<- gene_path_sig$ID11 #ID2
+y2_sig_path<- rep(1, length(y_sig_path)) # weight
+y3_sig_path<- as.character(rep ("red" , length(y_sig_path)))#color
+
+
+
+```
+
+```{r}
+HivePlotData<-list()
+nodes_sig_path<-data.frame(x_sig_path,x1_sig_path,x2_sig_path,x3_sig_path,x4_sig_path,x5_sig_path)
+colnames(nodes_sig_path)<-c("id", "lab", "axis","radius", "size", "color")
+edges_sig_path<- data.frame(y_sig_path, y1_sig_path, y2_sig_path, y3_sig_path)
+colnames(edges_sig_path)<- c("id1", "id2", "weight", "color")
+type<- c("2D")
+desc<-c("gene pathabolites hive plot")
+axis.cols<- c("pink" ,"pink")
+
+Data_hive_sig_path<- list(nodes_sig_path, edges_sig_path, type, desc, axis.cols)
+
+names(Data_hive_sig_path)<-c("nodes", "edges", "type", "desc", "axis.cols")
+Data_hive_sig_path$nodes$lab<-as.character(Data_hive_sig_path$nodes$lab)
+Data_hive_sig_path$nodes$color<-as.character(Data_hive_sig_path$nodes$color)
+Data_hive_sig_path$edges$color<-as.character(Data_hive_sig_path$edges$color)
+
+class(Data_hive_sig_path)<-"HivePlotData"
+plotHive(Data_hive_sig_path, ch=5, bkgnd = "white", axLabs = c("Pathways", "Genes"),axLab.pos = c(8, 6),axLab.gpar = gpar(fontsize = 14), anCoord = "global")
+
+
+```

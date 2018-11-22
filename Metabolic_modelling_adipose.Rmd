@@ -1,0 +1,250 @@
+---
+title: "Reporter metbolites for differentially expressed genes under palmitate treatment based on human metabolic network"
+author: "Ashfaq Ali"
+output:
+  pdf_document:
+    fig_caption: yes
+  html_notebook: default
+  html_document: default
+  word_document: default
+---
+## The differental expression analyses was performed using Fisher exact test in pairwise samples and fold changes and p-values were produced using meta analyses of fold chnages and p-values.
+
+```{r, include=FALSE}
+library(piano)
+library(ComplexHeatmap)
+library(corrplot)
+library(Hmisc)
+library(limma)
+library(impute)
+library(readr)
+library(stringr)
+library(biomaRt)
+```
+
+```{r, echo=FALSE}
+Differentially_expressed_Palmitate <- read_csv("Z:/Ashfaq_Ali/GSM/Palmitate_control/Fisher_Palmitate/meanFCmetaP.csv")
+#RNAinputFortINIT_2 <- read_csv("Z:/AQAI - Ashfaq Ali/GSM/Saeed_pipeline/Codes/MATLAB/RNAinputFortINIT_2.txt")
+bm <- useMart("ensembl")
+bm <- useDataset("hsapiens_gene_ensembl", mart=bm)
+
+ids_Palm<-Differentially_expressed_Palmitate$X1
+Etrez_Palm <- getBM(attributes=c("ensembl_gene_id","hgnc_symbol"), filters=c("hgnc_symbol"), ids_Palm, mart=bm)
+Palm_diff_ensemble<-merge.data.frame(x=Differentially_expressed_Palmitate,y=Etrez_Palm, by.x="X1", by.y="hgnc_symbol")
+
+colnames(Palm_diff_ensemble)<-c("HGCN_id", "log2foldchange", "metaPvalue", "ensembleid")                 
+
+dups<-which(duplicated(Palm_diff_ensemble$ensembleid))
+
+rownames(Palm_diff_ensemble)<-make.unique(Palm_diff_ensemble$ensembleid)
+
+## Load the the gene metabolite association file
+HMR2_gm_GSC <- read_delim("Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Base_files/HMR2_Generic/HMR2_gm_GSC.sif",  "\t", escape_double = FALSE, col_names = FALSE, trim_ws = TRUE)
+HMR2_gm_GSC<-HMR2_gm_GSC[,c(3,1)] ## Extract the gene names( 3rd columns)  and associated metabolites (column 1)
+
+HMR2_gp_GSC <- read_delim("Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Base_files/HMR2_Generic/Gene_pathway_HMR2_generic.csv",  ",", escape_double = FALSE, col_names = TRUE, trim_ws = TRUE)
+HMR2_gp_GSC<-HMR2_gp_GSC[, c(2,1)]
+
+myPval<- Palm_diff_ensemble$metaPvalue
+names(myPval)<-Palm_diff_ensemble$ensembleid
+myFC<-Palm_diff_ensemble$log2foldchange
+names(myFC)<-Palm_diff_ensemble$ensembleid
+direction<-ifelse(myFC>0, 1,-1)
+myGsc<-loadGSC(HMR2_gm_GSC)
+myGsc_2<-loadGSC(HMR2_gp_GSC)
+
+gene_stats<-cbind(myPval,myFC)
+rownames(gene_stats)<-DE_genes_palm_controls_EdgeR$`ENSG ID`
+reporter_palm<-runGSA(geneLevelStats = myPval, directions = direction,gsc=myGsc, geneSetStat="reporter", signifMethod="nullDist", nPerm=1000, gsSizeLim=c(5,100))
+pathways_palm<-runGSA(geneLevelStats= myPval,directions = direction, gsc=myGsc_2, geneSetStat = "reporter", signifMethod="nullDist", nPerm=1000, gsSizeLim=c(5,100) )
+```
+
+## Metabolic pathways enriched under palmitate treatmesnt in isolated human islets
+
+### List of differentally activated pathways in human islets after palmitate treatment
+
+```{r, echo=FALSE}
+gsaResTab_palm_path <- GSAsummaryTable(pathways_palm)
+ii <- which(gsaResTab_palm_path[,11]<0.05)
+gsaResTab_palm_path[ii,]
+write.csv(gsaResTab_palm_path, "Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Palmitat_vs_control/Pathway_list_palmitate.csv", row.names = FALSE)
+```
+
+```{r, echo=FALSE}
+gsaResTab_palm_metabo <- GSAsummaryTable(reporter_palm)
+ii <- which(gsaResTab_palm_metabo[,11]<0.05)
+gsaResTab_palm_metabo[ii,]
+write.csv(gsaResTab_palm_metabo, "Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Palmitat_vs_control/Pathway_list_palmitate_2.csv", row.names = FALSE)
+```
+### A network representation of metabolic pathways enriched and interconnectivity between the pathways based on shared number of genes
+
+```{r, echo=FALSE}
+pdf("Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Palmitat_vs_control/Palm_pathways.pdf", width = 8)
+networkPlot(pathways_palm, class="distinct", direction="both", significance=0.05, label="names",adjusted = TRUE, lay = 4 , cexLabel = 1  , ncharLabel = 100,edgeColor = "yellow4", nodeSize = c(10,30), overlap = 3 , main = "Metabolic pathways over-represented in the palmitate condition")
+networkPlot(pathways_palm, class="non", direction="both", significance=0.01, label="names",adjusted = TRUE, lay = 4, cexLabel = 0.9, edgeColor = "darkgreen", main = "Reporter Pathways in Palmitate treatment", edgeWidth = c(1,15), ncharLabel = 70, cexLegend = 1.2)
+dev.off()
+```
+
+### A heatmap of metabolic pathways with representation of direction of regulation, significance and number of genes associated with regulation
+
+```{r, echo=FALSE}
+pdf("Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Palmitat_vs_control/Palm_pathways_heatmap_pval.pdf", width = 10)
+GSAheatmap(pathways_palm, cutoff = 4, ncharLabel = 100, columnnames = "abbr", adjusted = TRUE, cellnote = "pvalue", colorkey =TRUE,cex = 1)
+dev.off()
+```
+
+
+
+```{r, echo=FALSE}
+
+GSAheatmap(reporter_palm, cutoff = 10, ncharLabel = 100, columnnames = "abbr", adjusted = TRUE, cellnote = "pvalue", colorkey = FALSE)
+```
+
+## A network of significantly enriched reporter metabolites based on differential gene expression analyses
+
+
+```{r, echo=FALSE}
+nw_plam <- networkPlot(reporter_palm, class="distinct", direction="both", significance=0.01, label="names",adjusted = TRUE, lay = 3
+                       , cexLabel = .9, edgeColor = "darkgreen", main = "Reporter metabolites in Palmitate treatment", edgeWidth =  c(1,1), ncharLabel = 25, cexLegend = 1.2)
+
+```
+
+```{r, echo=FALSE}
+pdf("Z:/Ashfaq_Ali/GSM/Analyses_pipeline/Palmitat_vs_control/Palm_metabolites_heatmap_pval.pdf", width = 10)
+GSAheatmap(pathways_palm, cutoff = 4, ncharLabel = 100, columnnames = "abbr", adjusted = TRUE, cellnote = "nGenes", colorkey =TRUE,cex = 0.9, colorgrad = c("red", "green"))
+dev.off()
+```
+## A netwrok of repoter metabolites distinctly up-regulated upon Palimitate treatment
+
+Note that the threshold of siginifcance is lowered to 0.05 as there were none that passed the 0.01 threshold.
+
+```{r, echo=FALSE}
+nw_palm_up<-nw_plam <- networkPlot(reporter_palm, class="distinct", direction="up", significance=0.01, label="names",adjusted = TRUE, lay = 2
+                       , cexLabel = .9, edgeColor = "darkgreen", main = "Reporter metabolites in Palmitate treatment", edgeWidth =  c(1,1), ncharLabel = 25, cexLegend = 1.2)
+```
+
+## List of genes and associated p-values suggesting u
+```{r, echo=FALSE}
+ppara<-geneSetSummary(reporter_palm, "activation-ppara[c]") # To find gene level statistics from the repoeter metbolites 
+ppara<-cbind(ppara$geneLevelStats,ppara$directions)
+ppara<-as.data.frame(ppara)
+colnames(ppara)<-c("Pval", "direction")
+ppara[ppara$Pval<0.01,]
+
+```
+
+## A netwrok of Siginifcantly downregulated metabolites 
+
+```{r, echo=FALSE}
+nw_down_palm <- nw_plam <- networkPlot(reporter_palm, class="distinct", direction="down", significance=0.01, label="names",adjusted = TRUE, lay = 4, cexLabel = .9, edgeColor = "darkgreen", main = "Reporter metabolites in Palmitate treatment", edgeWidth =  c(1,1), ncharLabel = 25, cexLegend = 1.2)
+```
+
+```{r, echo=FALSE}
+gsaResTab_palm <- GSAsummaryTable(reporter_palm)
+ii <- which(gsaResTab_palm[,10]<0.0001)
+gsaResTab_palm$Name[ii]
+
+```
+
+## Distictly down-regulated
+
+```{r, echo=FALSE}
+iii<-which(gsaResTab_palm[,8]<0.01)
+distinct_down<-(gsaResTab_palm[iii,c(1,2,7,8)])
+colnames(distinct_down)<-c("Metbolite", "No_of_Genes","Pval","AdjPval")
+distinct_down_2<-distinct_down[order(distinct_down$Pval),]
+head(distinct_down_2,20)
+distinct_down_2<-as.data.frame(distinct_down_2)
+```
+
+## Distintly up-regulated metabolites 
+
+```{r, echo=FALSE}
+iii<-which(gsaResTab_palm[,5]<0.01)
+distinct_up<-(gsaResTab_palm[iii,c(1,2,4,5)])
+colnames(distinct_up)<-c("Metbolite", "No_of_Genes","Pval","AdjPval")
+distinct_up_2<-distinct_up[order(distinct_up$Pval),]
+head(distinct_up_2,20)
+distinct_up_2<-as.data.frame(distinct_up_2)
+```
+
+```{r, echo=FALSE}
+iii<-which(gsaResTab_palm[,11]<0.01)
+distinct_both<-(gsaResTab_palm[iii,c(1,2,10,11)])
+colnames(distinct_both)<-c("Metbolite", "No_of_Genes","Pval", "AdjPval")
+distinct_both_2<-distinct_both[order(distinct_both$Pval),]
+head(distinct_both_2,20)
+distinct_both_2<-as.data.frame(distinct_both_2)
+```
+
+
+```{r}
+Palm_down_with_genes<-list()
+Palm_down_with_genes_stats<-list()
+for (i in 1:length(distinct_down_2$Metbolite)){
+    
+   Palm_down_with_genes[[i]] <- geneSetSummary(reporter_palm, distinct_down_2$Metbolite[i])
+   Palm_down_with_genes_stats[[i]]<-cbind(rep(Palm_down_with_genes[[i]]$name,length(Palm_down_with_genes[[i]]$geneLevelStats)),names(Palm_down_with_genes[[i]]$geneLevelStats),Palm_down_with_genes[[i]]$geneLevelStats, Palm_down_with_genes[[i]]$directions)
+}
+
+Palm_met_genes_down_only<-do.call("rbind", Palm_down_with_genes_stats)
+Palm_met_genes_down_only<-as.data.frame(Palm_met_genes_down_only)
+colnames(Palm_met_genes_down_only)<-c("Metabolite", "gene", "Pval", "Direction")
+Palm_met_genes_down_only$Pval<-as.numeric(paste(Palm_met_genes_down_only$Pval))
+Palm_met_genes_down_only$Direction<-as.numeric(paste(Palm_met_genes_down_only$Direction))
+Palm_met_genes_down_only[, c("Symbol", "Log2FChange", "AdjPval")]<-DE_genes_palm_controls_EdgeR[as.character(Palm_met_genes_down_only$gene),c(1,3,5)]
+```
+
+
+```{r}
+Palm_up_with_genes<-list()
+Palm_up_with_genes_stats<-list()
+for (i in 1:length(distinct_up_2$Metbolite)){
+    
+   Palm_up_with_genes[[i]] <- geneSetSummary(reporter_palm, distinct_up_2$Metbolite[i])
+   Palm_up_with_genes_stats[[i]]<-cbind(rep(Palm_up_with_genes[[i]]$name,length(Palm_up_with_genes[[i]]$geneLevelStats)),names(Palm_up_with_genes[[i]]$geneLevelStats),Palm_up_with_genes[[i]]$geneLevelStats, Palm_up_with_genes[[i]]$directions)
+}
+
+Palm_met_genes_up_only<-do.call("rbind", Palm_up_with_genes_stats)
+Palm_met_genes_up_only<-as.data.frame(Palm_met_genes_up_only)
+colnames(Palm_met_genes_up_only)<-c("Metabolite", "gene", "Pval", "Direction")
+Palm_met_genes_up_only$Pval<-as.numeric(paste(Palm_met_genes_up_only$Pval))
+Palm_met_genes_up_only$Direction<-as.numeric(paste(Palm_met_genes_up_only$Direction))
+Palm_met_genes_up_only[, c("Symbol", "Log2FChange", "AdjPval")]<-DE_genes_palm_controls_EdgeR[as.character(Palm_met_genes_up_only$gene),c(1,3,5)]
+```
+
+```{r}
+Palm_both_with_genes<-list()
+Palm_both_with_genes_stats<-list()
+for (i in 1:length(distinct_both_2$Metbolite)){
+    
+   Palm_both_with_genes[[i]] <- geneSetSummary(reporter_palm, distinct_both_2$Metbolite[i])
+   Palm_both_with_genes_stats[[i]]<-cbind(rep(Palm_both_with_genes[[i]]$name,length(Palm_both_with_genes[[i]]$geneLevelStats)),names(Palm_both_with_genes[[i]]$geneLevelStats),Palm_both_with_genes[[i]]$geneLevelStats, Palm_both_with_genes[[i]]$directions)
+}
+
+Palm_met_genes_both_only<-do.call("rbind", Palm_both_with_genes_stats)
+Palm_met_genes_both_only<-as.data.frame(Palm_met_genes_both_only)
+colnames(Palm_met_genes_both_only)<-c("Metabolite", "gene", "Pval", "Direction")
+Palm_met_genes_both_only$Pval<-as.numeric(paste(Palm_met_genes_both_only$Pval))
+Palm_met_genes_both_only$Direction<-as.numeric(paste(Palm_met_genes_both_only$Direction))
+Palm_met_genes_both_only[, c("Symbol", "Log2FChange", "AdjPval")]<-DE_genes_palm_controls_EdgeR[as.character(Palm_met_genes_both_only$gene),c(1,3,5)]
+
+```
+
+```{r, eval=FALSE, include=FALSE}
+setwd("Z:/Ashfaq_Ali/GSM/Palmitate_control/Fisher_Palmitate/")
+write.table(distinct_both_2, "Non_directional_Palmitate.txt", row.names = FALSE, sep = "\t")
+write.table(distinct_up_2, "Up_didistinct_Palmitate.txt", row.names = FALSE, sep = "\t")
+write.table(distinct_down_2, "Down_didistinct_Palmitate.txt", row.names = FALSE, sep = "\t")
+
+write.table(Palm_met_genes_both_only, "Palmitate_non_directional_gene_metabolites.txt", row.names = FALSE, sep = "\t")
+write.table(Palm_met_genes_down_only, "Palmitate_down_gene_metabolites.txt", row.names = FALSE, sep = "\t")
+write.table(Palm_met_genes_up_only, "Palmitate_up_gene_metabolites.txt", row.names = FALSE, sep = "\t")
+
+```
+
+```{r, eval=FALSE, include=FALSE}
+setwd("Z:/Ashfaq_Ali/GSM/Palmitate_control/Fisher_Palmitate/")
+writeFilesForKiwi(reporter_palm, label = "Palm_vs_control")
+
+```
